@@ -1,14 +1,14 @@
 /////////////////////////////////////////////////////////////////////////////////////////////
 //           Code line follower yang memiliki beberapa case dalam rintangannya             //
 //                                                                                         //
-//   case 1 : default                                                                      //
-//    case ini digunakan untuk minimal menyelesaikan sampai check point 1 pada lintasan    //
-//   case 2 : indikator 1                                                                  //
-//     case ini digunakan untuk minimal menyelesaikan sampai check point 2 pada lintasan   //
-//   case 3 : indikator 2                                                                  //
-//     case ini digunakan untuk minimal menyelesaikan sampai check point 3 pada lintasan   //
-//   case 4 : indikator 3                                                                  //
-//     case ini digunakan untuk minimal menyelesaikan sampai check point 4 pada lintasan   //
+//   Mode 0 : Kalibrasi                                                                    //
+//     Mode ini digunakan untuk melakukan kalibrasi sensor                                 //
+//   Mode 1 : Setting Const PID                                                            //
+//     Mode ini digunakan untuk minimal menyelesaikan sampai check point 2 pada lintasan   //
+//   Mode 2 : Lomba                                                                        //
+//     Mode siap untuk Line Following                                                      //
+//   Mode 3 :                                                                              //
+//     .                                                                                   //
 //                                                                                         //
 //  dibuat oleh ://                                                                        //
 //    Calmantara Sumpono Putra - 13215032                                                  // 
@@ -19,64 +19,90 @@
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 //                         Initiation for Constanta and Variable                           //
+//                                                                                         //
+//    ::Indikator-Sensor-PID                                                               //
 /////////////////////////////////////////////////////////////////////////////////////////////
 //terminal shield motor
 AF_DCMotor motor_l(1);
 AF_DCMotor motor_r(4);
 
-//inisiasi motor dan PID
+// Inisiasi Bagian Indikator
+int pin_Mode = 36;
+int val_Mode = 0; //nilai indikator
+int pin_Count_Plus = 34;
+int pin_Count_Min = 32;
+int pin_Groetzel = 38;
+int pin_Ind[4] = {24, 26, 28, 30};
+int list_Indikator[16];
+int data_Indikator[2][2][2][2]= {0};
+
+// Inisiasi Bagian Sensor
+int cal_Black ; //calibrating black line
+int sens[6] = {0, 0, 0, 0, 0, 0};
+int val_Count = 0;
+int counter; // sensor mana yg di pake untuk counter A8 = Kiri || A13 = Kanan
+char bacaBagian = "F"; // metode pembacaan sensor;
+int ignorance = 1;
+
+// Inisiasi Bagian PID+Motor
 const float Kp = 1, Ki = 0, Kd = 0; //Trial and Error
 float error = 0, P = 0, I = 0, D = 0, PID_value = 0;
-float previous_error = 0;
-const int initial_motor_speed = 200;//initial speed for motor
-int sens[6] = {0, 0, 0, 0, 0, 0};
-
-//Inisiasi indikator case
-int pin_Indicator = 36;
-int ind_Value = 0; //nilai indikator
-int ind[6] = {24, 26, 28, 30, 32, 34};
-
-//inisiasi variabel lain
-int pin_Groetzel = 38;
-int cal_black ; //calibrating black line
-int button_Ind = 0; //inisiasi untuk push button
+float previous_Error = 0;
+const int initial_Motor_Speed = 200;//initial speed for motor
 float speed_l = 0;
 float speed_r = 0;
-int bacaBagian = 0; // metode pembacaan sensor;
-int count = 0; //untuk case yg perlu counter
-int counter; // sensor mana yg di pake untuk counter A8 = Kiri || A13 = Kanan
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 //                             Deklarasi Procedure Function                                //
+//                                                                                         //
+//   ::Indikator-Sensor-PID                                                                //
 /////////////////////////////////////////////////////////////////////////////////////////////
-void bacaSensor();
-//  untuk input nilai sens[i]
-void olahSensor(); 
-//  pengolah input sens[i] dan mengupdate nilai error
-void indicator_in();
-//  pengaturan mode dengan counter oleh pushbutton
-void default_program();
-//    
-void mode_1();
-void mode_2();
-void mode_3();
-void PID();
-//  Mode yang digunakan dalam lomba
-void motor_speed_default(int f);
-//  pengatur gerak motor (PWM) dari PID
-void motor_speed1();
-void motor_speed2();
-void motor_speed3();
-//  speed control program 1  
+void edit_data_int(int data);     
+void edit_data_float(float data);
+// untuk mengedit variable menggunakan Pushbuttin (+) (-)
+// int -> +1    float -> +0.1
+void baca_Indikator();
+// pengaturan mode dengan counter oleh pushbutton
+void olah_Indikacor();
+// pengaturan mode dengan switch case
+void set_Indocator(int Nomor; int Kondisi);
+// pengesetan indikator ke n dengan kondisi 0/1
+void view_Indikator();
+// mengatur penampilan indikator ke 16 LED
+  void indikatorKalibrasiLine();
+  void indikatorSettingPID(float x);
+  void indikatorJalan();
+  // Mode penampilan indikator;
 
-///////////////////////////////////////////////////////////////////////////////////////////
-//                                     Main Program                                      //
-///////////////////////////////////////////////////////////////////////////////////////////
+void baca_Sensor(char bagian);
+// untuk input nilai sens[i]
+void olah_Sensor(); 
+// pengolah input sens[i] dan mengupdate nilai error
+void count(int counter);
+// pengaturan metode counting
+void olah_count();
+// penentuan kondisi dengan Case untuk variable "count"
+
+void goPID();
+// penghitungan pengolahan data untuk mencari PID
+void motor_speed_default(int f);
+// kecepatan motor default
+void set_Motor();
+// kecepatan motor yang diatur dengan PID
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+//                                     Main Program                                        //
+//                                                                                         //
+//   ::Indikator-Sensor-PID                                                                //
+/////////////////////////////////////////////////////////////////////////////////////////////
 void setup () 
 {
   Serial.begin(9600);
-  pinMode(pin_Indicator,INPUT);
+  pinMode(pin_Mode,INPUT);
+  pinMode(pin_Count_Plus,INPUT);
+  pinMode(pin_Count_Min,INPUT);
   pinMode(pin_Groetzel,OUTPUT);
+  digitalWrite(pin_Groetzel,HIGH);
   
   //pin input analog
   pinMode(A8, INPUT);
@@ -86,14 +112,14 @@ void setup ()
   pinMode(A12, INPUT);
   pinMode(A13, INPUT);
 
-  //pin output Indicator
-  for (int i = 0; i < 6; i++)
+  //pin output Indikator
+  for (int i = 0; i < 4; i++)
   {
-    pinMode(ind[i],OUTPUT);
+    pinMode(pin_ind[i],OUTPUT);
   }
   
   //inisiasi sensor
-  bacaSensor(0);	
+  bacaSensor("F");	
 }
 
 void loop () 
@@ -101,18 +127,107 @@ void loop ()
   //Pembacaan Sensor
   Serial.print('sens[0]'+'sens[1]'+'sens[2]'+'sens[3]'+'sens[4]'+'sens[5]');
   
-  indicator_in();
-
 }
 
 
-///////////////////////////////////////////////////////////////////////////////////////////
-//                            Algoritma Procedure Function                               //
-///////////////////////////////////////////////////////////////////////////////////////////
-void bacaSensor(int bagian)
+/////////////////////////////////////////////////////////////////////////////////////////////
+//                             Algoritma Procedure Function                                //
+//                                                                                         //
+//   ::Indikator-Sensor-PID                                                                //
+/////////////////////////////////////////////////////////////////////////////////////////////
+void edit_data_int(int data)
+{
+  if (digitalRead(pin_Count_Plus) == 0){
+    if digitalRead(pin_Count_Plus) == 1){
+      data++;
+    }
+  }if (digitalRead(pin_Count_Min) == 0){
+    if digitalRead(pin_Count_Min) == 1){
+      data--;
+    }
+  }
+}
+void edit_data_float(float data)
+{
+  if (digitalRead(pin_Count_Plus) == 0){
+    if digitalRead(pin_Count_Plus) == 1){
+      data += 0.1;
+    }
+  }if (digitalRead(pin_Count_Min) == 0){
+    if digitalRead(pin_Count_Min) == 1){
+      data -= 0.1;
+    }
+  }
+}
+void baca_Indikator()  //  pengaturan mode dengan counter oleh pushbutton
+{
+  if (digitalRead(pin_Mode) == 0){
+    if digitalRead(pin_Mode) == 1){
+      val_Mode++;
+      if (val_Mode == 3) { 
+        val_Mode = 0;
+      }
+    }
+  }
+}
+void olah_Indikacor()  // pengaturan mode dengan switch case
+{
+  switch (val_Mode){
+    case 0:  // Mode Kalibrasi
+      indikatorKalibrasiLine();
+      edit_data_int(cal_black);
+    break;
+    case 1:
+      float ubah = 0;
+      indikatorSettingPID(ubah);
+      edit_data_float(ubah);
+      Kp += ubah;
+    break;
+    case 2:
+      indikatorJalan();
+      edit_data_int(val_Count);
+    break;
+  }
+}
+void set_Indocator(int Nomor; int Kondisi) // pengesetan indikator ke n dengan kondisi 0/1
+{
+  list_Indikator[Nomor] = Kondisi;
+  int i = 0;
+  for (int D = 0; D < 2; D++){
+    for (int C = 0; C < 2; C++){
+      for (int B = 0; B < 2; B++){
+        for (int A = 0; A < 2; A++){
+          if (i == Nomor){
+            data_Indikator[D][C][B][A] = 1;
+          }
+          i++;
+        }
+      }
+    }
+  }
+}
+void view_Indikator() // mengatur penampilan indikator ke 16 LED
+{
+  for (int D = 0; D < 2; D++){
+    for (int C = 0; C < 2; C++){
+      for (int B = 0; B < 2; B++){
+        for (int A = 0; A < 2; A++){
+          If (Data[D][C][B][A] == 1){
+            digitalWrite(pin_Ind[0], A);
+            digitalWrite(pin_Ind[1], B);
+            digitalWrite(pin_Ind[2], C);
+            digitalWrite(pin_Ind[3], D);
+          }
+        }
+      }
+    }
+  }
+}
+
+void baca_Sensor(char bagian);  // untuk input nilai sens[i]
 {
   //all sensor is active
-  if (bagian == 0)
+  if (bagian == "F")
   {
     sens[0] = analogRead(A8);
     sens[1] = analogRead(A9);
@@ -122,7 +237,7 @@ void bacaSensor(int bagian)
     sens[5] = analogRead(A13);
   }
   //left sensor is active
-  if (bagian == 2){
+  if (bagian == "L"){
     sens[0] = analogRead(A8);
     sens[1] = analogRead(A9);
     sens[2] = analogRead(A10);
@@ -131,7 +246,7 @@ void bacaSensor(int bagian)
     sens[5] = 0;
   }
   //right sensor is active
-  if (bagian == 1){
+  if (bagian == "R"){
     sens[0] = 0;
     sens[1] = 0;
     sens[2] = analogRead(A10);
@@ -139,12 +254,7 @@ void bacaSensor(int bagian)
     sens[4] = analogRead(A12);
     sens[5] = analogRead(A13);
   }
-  // untuk pengisian/pembacaan nilai sens[i]
-}
 
-void olahSensor(int bagian)
-{
-  bacaSensor(bagian);
   for(int i = 0; i < 6; i++)
   {
     if(sens[i] < cal_black) 
@@ -156,7 +266,16 @@ void olahSensor(int bagian)
       sens[i] = 1;
     }
   }
-  
+  /* untuk pembacaan yg lebih sederhana
+  string terbaca;
+  for (int i = 0; i< 6; i++){
+    terbaca[i] = sens[i];
+  }
+  Serial.println(terbaca);*/
+}
+
+void olah_Sensor() // pengolah input sens[i] dan mengupdate nilai error
+{
   // Pembacaan sensor pada Robot
   if( (sens[0] = 0) && (sens[1] = 0) && (sens[2] = 0) && (sens[3] = 0) && (sens[4] = 0) && (sens[5] = 1) ) 
   { // sensor 6 terkena garis
@@ -214,112 +333,51 @@ void olahSensor(int bagian)
   }
 }
 
-void default_program(){
-  // pengaktifan mode saat menyentuh lintasan T
-  olahSensor(bacaBagian);
-  if ( (sens[0] == 0) && (sens[5] == 0) )
-  {
-    if ( (sens[0] == 1) && (sens[5] == 1) )
-    {
-      count = 0;
-      bacaBagian = 1;
-      counter = A13;    
-      /*motor_l.run(FORWARD);
-      motor_l.setSpeed(220);
-      motor_r.run(FORWARD);
-      motor_r.setSpeed(220);
-      delay(100);*/
-    }
-  }
+void count(int counter) // pengaturan metode counting
+{
   if (analogRead(counter) == 0)
   {
     if (analogRead(counter) == 1)
     {
-      count++;
+      val_Count++;
     }
   }
-  switch (count) 
+}
+}
+void olah_count() // penentuan kondisi dengan Case untuk variable "count"
+{
+  switch (val_Count) 
   {
+    case 0 :
+      bacaBagian = "L";
+      counter = A13;    
+    break;
     case 1 :
-      bacaBagian = 2;
+      bacaBagian = "R";
       counter = A8;
-      
     break;
     case 2 : 
-      bacaBagian = 1;
+      bacaBagian = "L";
       counter = A13;
     break;  
     case 3 :
-      bacaBagian = 0;
+      bacaBagian = "F";
       count = 0;
     break;
   }
-}
-//Prosedur untuk indikator case
-void indicator_in()
-{
-  //indikator button
-  button_Ind = digitalRead(pin_Indicator);
-  if (button_Ind == HIGH)
-  {
-    if (button_Ind == LOW)
-    {
-      ind_Value++;
-    }
-  }
   
-  if (ind_Value == 3)
-  {
-    ind_Value = 0;
-  }
-
-  //default 
-  if (ind_Value == 0)
-  {
-    digitalWrite(ind[0], LOW);
-    digitalWrite(ind[1], LOW);
-    digitalWrite(ind[2], LOW);
-    default_program();
-    calculate_PID();  
-  }
-  //Masuk ke mode 1
-  if (ind_Value == 1) 
-  {
-    digitalWrite(ind[0], HIGH);
-    digitalWrite(ind[1], LOW);
-    digitalWrite(ind[2], LOW);
-    // mode_1();
-  }
-  //Masuk ke mode 2
-  if (ind_Value == 2) 
-  {
-    digitalWrite(ind[0], HIGH);
-    digitalWrite(ind[1], HIGH);
-    digitalWrite(ind[2], LOW);
-    // mode_2();
-  }
-  //Masuk ke mode 3
-  if (ind_Value == 3) 
-  {
-    digitalWrite(ind[0], HIGH);
-    digitalWrite(ind[1], HIGH);
-    digitalWrite(ind[2], HIGH);
-    // mode_3();
-  }
 }
 
-//Prosedur untuk perhitungan PID
-void calculate_PID()
+void goPID() // penghitungan pengolahan data untuk mencari PID
 {
   P = error;
   I += error;
   D = error - previous_error;
 
   PID_value = (Kp * P) + (Ki * I) + (Kd * D);
-  previous_error = error;
+  previous_error = error;  
 }
-//procedure for motor speed
-void motor_speed_default(int f)
+void set_Motor() // kecepatan motor yang diatur dengan PID
 {
   //inisiasi nilai PID
   if (PID_value > 255)
@@ -339,5 +397,5 @@ void motor_speed_default(int f)
   motor_l.run(FORWARD);
   motor_l.setSpeed(speed_l);
   motor_r.run(FORWARD);
-  motor_r.setSpeed(speed_r);
+  motor_r.setSpeed(speed_r);  
 }
