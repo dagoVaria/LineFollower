@@ -5,10 +5,12 @@
 //     Mode ini digunakan untuk melakukan kalibrasi sensor                                 //
 //   Mode 1 : Setting Const PID                                                            //
 //     Mode ini digunakan untuk minimal menyelesaikan sampai check point 2 pada lintasan   //
-//   Mode 2 : Lomba                                                                        //
-//     Mode siap untuk Line Following                                                      //
-//   Mode 3 :                                                                              //
-//     .                                                                                   //
+//   Mode 2 : CheckPoint I                                                                 //
+//     Mode siap untuk Line Following hingga CheckPoint I dari Start                       //
+//   Mode 3 : CheckPoint II                                                                //
+//     Mode siap untuk Line Following hingga CheckPoint II dari I                          //
+//   Mode 4 : CheckPoint III                                                               //
+//     Mode siap untuk Line Following hingga CheckPoint III dari II                        //
 //                                                                                         //
 //  dibuat oleh ://                                                                        //
 //    Calmantara Sumpono Putra - 13215032                                                  // 
@@ -38,7 +40,8 @@ int data_Indikator[2][2][2][2]= {0};
 
 // Inisiasi Bagian Sensor
 int cal_Black ; //calibrating black line
-int sens[6] = {0, 0, 0, 0, 0, 0};
+int read_sens[6] = {0, 0, 0, 0, 0, 0};
+int val_sens[6] = {0, 0, 0, 0, 0, 0};
 int val_Count = 0;
 int counter; // sensor mana yg di pake untuk counter A8 = Kiri || A13 = Kanan
 char bacaBagian = 'F'; // metode pembacaan sensor;
@@ -63,9 +66,9 @@ void edit_data_float(float data);
 // int -> +1    float -> +0.1
 void baca_Indikator();
 // pengaturan mode dengan counter oleh pushbutton
-void olah_Indikacor();
+void olah_Indikator();
 // pengaturan mode dengan switch case
-void set_Indocator(int Nomor, int Kondisi);
+void set_Indikator(int Nomor, int Kondisi);
 // pengesetan indikator ke n dengan kondisi 0/1
 void view_Indikator();
 // mengatur penampilan indikator ke 16 LED
@@ -75,18 +78,17 @@ void view_Indikator();
   // Mode penampilan indikator;
 
 void baca_Sensor(char bagian);
-// untuk input nilai sens[i]
+// untuk input nilai read_sens[i]
 void olah_Sensor(); 
-// pengolah input sens[i] dan mengupdate nilai error
+// pengolah input val_sens[i] dan mengupdate nilai error
+void data_error_default(); 
 void count(int counter);
 // pengaturan metode counting
-void olah_count();
+void olah_Count();
 // penentuan kondisi dengan Case untuk variable "count"
 
 void goPID();
 // penghitungan pengolahan data untuk mencari PID
-void motor_speed_default(int f);
-// kecepatan motor default
 void set_Motor();
 // kecepatan motor yang diatur dengan PID
 
@@ -124,7 +126,15 @@ void setup() {
 void loop () 
 {
   //Pembacaan Sensor
-  Serial.print('sens[0]'+'sens[1]'+'sens[2]'+'sens[3]'+'sens[4]'+'sens[5]');
+  Serial.print('val_sens[0]'+'val_sens[1]'+'val_sens[2]'+'val_sens[3]'+'val_sens[4]'+'val_sens[5]');
+  olah_Sensor();
+  olah_Count();
+  
+  goPID();
+  set_Motor();
+
+  olah_Indikator();
+  view_Indikator();
   
 }
 
@@ -169,9 +179,10 @@ void baca_Indikator()  //  pengaturan mode dengan counter oleh pushbutton
     }
   }
 }
-void olah_Indikacor()  // pengaturan mode dengan switch case
+void olah_Indikator()  // pengaturan mode dengan switch case
 {
   float ubah = 0.0;
+  baca_Indikator();
   switch (val_Mode){
     case 0:  // Mode Kalibrasi
       indikatorKalibrasiLine();
@@ -188,7 +199,7 @@ void olah_Indikacor()  // pengaturan mode dengan switch case
     break;
   }
 }
-void set_Indocator(int Nomor, int Kondisi) // pengesetan indikator ke n dengan kondisi 0/1
+void set_Indikator(int Nomor, int Kondisi) // pengesetan indikator ke n dengan kondisi 0/1
 {
   list_Indikator[Nomor] = Kondisi;
   int i = 0;
@@ -224,119 +235,197 @@ void view_Indikator() // mengatur penampilan indikator ke 16 LED
 }
 void indikatorKalibrasiLine()
 {
-  list_Indikator[2] = sens[0];
+  //inisiasi agar 0 semua
+  for (int i = 1; i <= 16; i++){
+    set_Indikator(i, 0);
+  }
+  for (int i = 0; i < 6; i++){
+    set_Indikator((i+1), val_sens[i]);
+  }
+  set_Indikator(16,1);
+  set_Indikator(15,0);
 }
 void indikatorSettingPID(float x)
 {
+  //inisiasi agar 0 semua
+  for (int i = 1; i <= 16; i++){
+    set_Indikator(i, 0);
+  }
+  for (int i = 1; i <= 10*x; i++){
+    set_Indikator(i, 1);
+  }
+  set_Indikator(16,0);
+  set_Indikator(15,1);
 }
 void indikatorJalan()
 {
+  //inisiasi agar 0 semua
+  for (int i = 1; i <= 16; i++){
+    set_Indikator(i, 0);
+  }
+  for (int i = 1; i <= val_Count; i++){
+    set_Indikator(i, 1);
+  }
+  set_Indikator(16,1);
+  set_Indikator(15,1);
 }
 
-void baca_Sensor(char bagian)  // untuk input nilai sens[i]
+void baca_Sensor(char bagian)  // untuk input nilai val_sens[i]
 {
   //all sensor is active
   if (bagian == 'F')
   {
-    sens[0] = analogRead(A8);
-    sens[1] = analogRead(A9);
-    sens[2] = analogRead(A10);
-    sens[3] = analogRead(A11);
-    sens[4] = analogRead(A12);
-    sens[5] = analogRead(A13);
+    read_sens[0] = analogRead(A8);
+    read_sens[1] = analogRead(A9);
+    read_sens[2] = analogRead(A10);
+    read_sens[3] = analogRead(A11);
+    read_sens[4] = analogRead(A12);
+    read_sens[5] = analogRead(A13);
   }
   //left sensor is active
   if (bagian == 'L'){
-    sens[0] = analogRead(A8);
-    sens[1] = analogRead(A9);
-    sens[2] = analogRead(A10);
-    sens[3] = analogRead(A11);
-    sens[4] = 0;
-    sens[5] = 0;
+    read_sens[0] = analogRead(A8);
+    read_sens[1] = analogRead(A9);
+    read_sens[2] = analogRead(A10);
+    read_sens[3] = analogRead(A11);
+    read_sens[4] = 0;
+    read_sens[5] = 0;
   }
   //right sensor is active
   if (bagian == 'R'){
-    sens[0] = 0;
-    sens[1] = 0;
-    sens[2] = analogRead(A10);
-    sens[3] = analogRead(A11);
-    sens[4] = analogRead(A12);
-    sens[5] = analogRead(A13);
+    read_sens[0] = 0;
+    read_sens[1] = 0;
+    read_sens[2] = analogRead(A10);
+    read_sens[3] = analogRead(A11);
+    read_sens[4] = analogRead(A12);
+    read_sens[5] = analogRead(A13);
   }
 
   for(int i = 0; i < 6; i++)
   {
-    if(sens[i] < cal_Black) 
+    if(read_sens[i] < cal_Black) 
     {
-      sens[i] = 0;
+      val_sens[i] = 0;
     }
     else 
     {
-      sens[i] = 1;
+      val_sens[i] = 1;
     }
   }
   /* untuk pembacaan yg lebih sederhana
-  string terbaca;
+  string line;
   for (int i = 0; i< 6; i++){
-    terbaca[i] = sens[i];
+    line[i] = val_sens[i];
   }
-  Serial.println(terbaca);*/
+  /*Serial.println(line);*/
 }
 
-void olah_Sensor() // pengolah input sens[i] dan mengupdate nilai error
+void olah_Sensor() // pengolah input val_sens[i] dan mengupdate nilai error
+{
+  baca_Sensor(bacaBagian);
+  if (ignorance = 0){
+    if ( ( val_sens[2] == 1 ) && ( val_sens[3] == 1) ){
+      // Pembacaan sensor pada Robot
+      if( (val_sens[0] == 0) && (val_sens[1] == 0) && (val_sens[4] == 0) && (val_sens[5] == 1) ) 
+      { // sensor 6 terkena garis
+        error = 5;
+      }
+      
+      if( (val_sens[0] == 0) && (val_sens[1] == 0) && (val_sens[4] == 1) && (val_sens[5] == 1) ) 
+      { // sensor 6 dan 5 terkena garis
+        error = 4;
+      }
+      
+      if( (val_sens[0] == 0) && (val_sens[1] == 0) && (val_sens[4] == 1) && (val_sens[5] == 0) ) 
+      { // sensor 5 terkena garis
+        error = 3;
+      }
+            
+      if( (val_sens[0] == 0) && (val_sens[1] == 0) && (val_sens[4] == 0) && (val_sens[5] == 0) ) 
+      { // keadaan robot normal
+        error = 0; 
+      }
+      
+      if( (val_sens[0] == 0) && (val_sens[1] == 1) && (val_sens[4] == 0) && (val_sens[5] == 0) ) 
+      { // sensor 2 terkena garis
+        error = -3;
+      }
+      
+      if( (val_sens[0] == 1) && (val_sens[1] == 1) && (val_sens[4] == 0) && (val_sens[5] == 0) ) 
+      { // sensor 1 dan 2 terkena garis
+        error = -4;
+      }
+      
+      if( (val_sens[0] == 1) && (val_sens[1] == 0) && (val_sens[4] == 0) && (val_sens[5] == 0) ) 
+      { // sensor 1 terkena garis
+        error = -5;
+      }
+    }
+    else
+    {
+      data_error_default();
+    }
+  }
+  else if (ignorance = 1)
+  {
+    data_error_default();
+  }
+}
+
+void data_error_default()
 {
   // Pembacaan sensor pada Robot
-  if( (sens[0] = 0) && (sens[1] = 0) && (sens[2] = 0) && (sens[3] = 0) && (sens[4] = 0) && (sens[5] = 1) ) 
+  if( (val_sens[0] == 0) && (val_sens[1] == 0) && (val_sens[2] == 0) && (val_sens[3] == 0) && (val_sens[4] == 0) && (val_sens[5] == 1) ) 
   { // sensor 6 terkena garis
     error = 5;
   }
   
-  if( (sens[0] = 0) && (sens[1] = 0) && (sens[2] = 0) && (sens[3] = 0) && (sens[4] = 1) && (sens[5] = 1) ) 
+  if( (val_sens[0] == 0) && (val_sens[1] == 0) && (val_sens[2] == 0) && (val_sens[3] == 0) && (val_sens[4] == 1) && (val_sens[5] == 1) ) 
   { // sensor 6 dan 5 terkena garis
     error = 4;
   }
   
-  if( (sens[0] = 0) && (sens[1] = 0) && (sens[2] = 0) && (sens[3] = 0) && (sens[4] = 1) && (sens[5] = 0) ) 
+  if( (val_sens[0] == 0) && (val_sens[1] == 0) && (val_sens[2] == 0) && (val_sens[3] == 0) && (val_sens[4] == 1) && (val_sens[5] == 0) ) 
   { // sensor 5 terkena garis
     error = 3;
   }
   
-  if( (sens[0] = 0) && (sens[1] = 0) && (sens[2] = 0) && (sens[3] = 1) && (sens[4] = 1) && (sens[5] = 0) ) 
+  if( (val_sens[0] == 0) && (val_sens[1] == 0) && (val_sens[2] == 0) && (val_sens[3] == 1) && (val_sens[4] == 1) && (val_sens[5] == 0) ) 
   { // sensor 4 dan 5 terkena garis
     error = 2;
   }
   
-  if( (sens[0] = 0) && (sens[1] = 0) && (sens[2] = 0) && (sens[3] = 1) && (sens[4] = 0) && (sens[5] = 0) ) 
+  if( (val_sens[0] == 0) && (val_sens[1] == 0) && (val_sens[2] == 0) && (val_sens[3] == 1) && (val_sens[4] == 0) && (val_sens[5] == 0) ) 
   { // sensor 4 terkena garis
     error = 1;
   }
   
-  if( (sens[0] = 0) && (sens[1] = 0) && (sens[2] = 1) && (sens[3] = 1) && (sens[4] = 0) && (sens[5] = 0) ) 
+  if( (val_sens[0] == 0) && (val_sens[1] == 0) && (val_sens[2] == 1) && (val_sens[3] == 1) && (val_sens[4] == 0) && (val_sens[5] == 0) ) 
   { // keadaan robot normal
     error = 0; 
   }
   
-  if( (sens[0] = 0) && (sens[1] = 0) && (sens[2] = 1) && (sens[3] = 0) && (sens[4] = 0) && (sens[5] = 0) ) 
+  if( (val_sens[0] == 0) && (val_sens[1] == 0) && (val_sens[2] == 1) && (val_sens[3] == 0) && (val_sens[4] == 0) && (val_sens[5] == 0) ) 
   { // sensor 3 terkena garis
     error = -1;
   }
   
-  if( (sens[0] = 0) && (sens[1] = 1) && (sens[2] = 1) && (sens[3] = 0) && (sens[4] = 0) && (sens[5] = 0) ) 
+  if( (val_sens[0] == 0) && (val_sens[1] == 1) && (val_sens[2] == 1) && (val_sens[3] == 0) && (val_sens[4] == 0) && (val_sens[5] == 0) ) 
   { // sensor 2 dan 3 terkena garis
     error = -2;
   }
   
-  if( (sens[0] = 0) && (sens[1] = 1) && (sens[2] = 0) && (sens[3] = 0) && (sens[4] = 0) && (sens[5] = 0) ) 
+  if( (val_sens[0] == 0) && (val_sens[1] == 1) && (val_sens[2] == 0) && (val_sens[3] == 0) && (val_sens[4] == 0) && (val_sens[5] == 0) ) 
   { // sensor 2 terkena garis
     error = -3;
   }
   
-  if( (sens[0] = 1) && (sens[1] = 1) && (sens[2] = 0) && (sens[3] = 0) && (sens[4] = 0) && (sens[5] = 0) ) 
+  if( (val_sens[0] == 1) && (val_sens[1] == 1) && (val_sens[2] == 0) && (val_sens[3] == 0) && (val_sens[4] == 0) && (val_sens[5] == 0) ) 
   { // sensor 1 dan 2 terkena garis
     error = -4;
   }
   
-  if( (sens[0] = 1) && (sens[1] = 0) && (sens[2] = 0) && (sens[3] = 0) && (sens[4] = 0) && (sens[5] = 0) ) 
+  if( (val_sens[0] == 1) && (val_sens[1] == 0) && (val_sens[2] == 0) && (val_sens[3] == 0) && (val_sens[4] == 0) && (val_sens[5] == 0) ) 
   { // sensor 1 terkena garis
     error = -5;
   }
@@ -353,8 +442,9 @@ void count(int counter) // pengaturan metode counting
   }
 }
 
-void olah_count() // penentuan kondisi dengan Case untuk variable "count"
+void olah_Count() // penentuan kondisi dengan Case untuk variable "count"
 {
+  count(counter);
   switch (val_Count) 
   {
     case 0 :
